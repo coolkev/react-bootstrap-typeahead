@@ -2,7 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import {findDOMNode} from 'react-dom';
 
-import {getDisplayName, scrollIntoViewIfNeeded} from '../utils/';
+import {getDisplayName, getMenuItemId, preventInputBlur, scrollIntoViewIfNeeded} from '../utils/';
 
 const menuItemContainer = (Component) => {
   class WrappedMenuItem extends React.Component {
@@ -34,7 +34,7 @@ const menuItemContainer = (Component) => {
 
     render() {
       const {activeIndex, isOnlyResult} = this.context;
-      const {position, ...props} = this.props;
+      const {label, option, position, ...props} = this.props;
 
       const active = isOnlyResult || activeIndex === position;
 
@@ -42,7 +42,12 @@ const menuItemContainer = (Component) => {
         <Component
           {...props}
           active={active}
+          aria-label={label}
+          aria-selected={active}
+          id={getMenuItemId(position)}
           onClick={this._handleClick}
+          onMouseDown={preventInputBlur}
+          role="option"
         />
       );
     }

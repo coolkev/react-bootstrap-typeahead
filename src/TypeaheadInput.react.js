@@ -7,7 +7,7 @@ import Loader from './Loader.react';
 import HintedInput from './HintedInput.react';
 import Token from './Token.react';
 
-import {getOptionLabel} from './utils/';
+import {getOptionLabel, preventInputBlur} from './utils/';
 import typeaheadInputContainer from './containers/typeaheadInputContainer';
 
 class TypeaheadInput extends React.Component {
@@ -35,7 +35,6 @@ class TypeaheadInput extends React.Component {
       disabled,
       hintText,
       inputRef,
-      isFocused,
       multiple,
       name: name || this.props.inputProps.name,
       onBlur,
@@ -48,6 +47,8 @@ class TypeaheadInput extends React.Component {
     };
 
     return (
+      /* eslint-disable jsx-a11y/no-static-element-interactions */
+      /* eslint-disable jsx-a11y/click-events-have-key-events */
       <div
         className={cx('rbt-input', 'form-control', {
           'focus': isFocused,
@@ -65,6 +66,8 @@ class TypeaheadInput extends React.Component {
         </div>
         {this._renderAux()}
       </div>
+      /* eslint-enable jsx-a11y/no-static-element-interactions */
+      /* eslint-enable jsx-a11y/click-events-have-key-events */
     );
   }
 
@@ -115,6 +118,7 @@ class TypeaheadInput extends React.Component {
               // Prevent the main input from auto-focusing again.
               e.stopPropagation();
             }}
+            onMouseDown={preventInputBlur}
           />
         </div>
       );

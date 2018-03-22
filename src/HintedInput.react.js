@@ -1,7 +1,8 @@
 import cx from 'classnames';
 import PropTypes from 'prop-types';
 import React from 'react';
-import AutosizeInput from 'react-input-autosize';
+
+import AutosizeInput from './AutosizeInput.react';
 
 const STYLES = {
   backgroundColor: 'transparent',
@@ -56,7 +57,6 @@ class HintedInput extends React.Component {
       className,
       hintText,
       inputRef,
-      isFocused,
       multiple,
       ...props
     } = this.props;
@@ -67,7 +67,6 @@ class HintedInput extends React.Component {
     return (
       <InputComponent
         {...props}
-        autoComplete="off"
         inputClassName={cx('rbt-input-main', className)}
         inputStyle={STYLES}
         ref={inputRef}
@@ -80,7 +79,7 @@ class HintedInput extends React.Component {
   }
 
   _renderHint = () => {
-    const {hintText, isFocused, multiple} = this.props;
+    const {hintText, multiple} = this.props;
 
     // TODO: Support hinting for multi-selection.
     return multiple ?
@@ -101,7 +100,7 @@ class HintedInput extends React.Component {
           zIndex: 0,
         }}
         tabIndex={-1}
-        value={isFocused ? hintText : ''}
+        value={hintText}
       />;
   }
 }

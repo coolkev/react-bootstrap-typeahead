@@ -1,11 +1,12 @@
 import {expect} from 'chai';
 
-import getHintText from '../src/utils/getHintText';
-import states from '../example/exampleData';
+import getHintText from '../../src/utils/getHintText';
+import states from '../../example/exampleData';
 
 const props = {
   activeItem: null,
   initialItem: {name: 'Alabama'},
+  isMenuShown: true,
   labelKey: 'name',
   minLength: 0,
   selected: [],
@@ -31,6 +32,11 @@ describe('getHintText', () => {
 
   it('returns an empty string when there is a selection', () => {
     const hintText = getHintText({...props, selected: [states[0]]});
+    expect(hintText).to.equal('');
+  });
+
+  it('returns an empty string when the menu is hidden', () => {
+    const hintText = getHintText({...props, isMenuShown: false});
     expect(hintText).to.equal('');
   });
 

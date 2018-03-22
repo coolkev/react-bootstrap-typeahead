@@ -1,13 +1,17 @@
-import {head, isEqual, noop} from 'lodash';
+import {flowRight, head, isEqual, noop} from 'lodash';
 import PropTypes from 'prop-types';
 import onClickOutside from 'react-onclickoutside';
 import React from 'react';
 import {deprecated} from 'prop-types-extra';
 
+import highlightOnlyResultContainer from './highlightOnlyResultContainer';
+import typeaheadInnerContainer from './typeaheadInnerContainer';
 import {caseSensitiveType, checkPropType, defaultInputValueType, highlightOnlyResultType, ignoreDiacriticsType, inputPropsType, labelKeyType, optionType} from '../propTypes/';
-import {defaultFilterBy, getOptionLabel, pluralize} from '../utils/';
+import {addCustomOption, defaultFilterBy, getOptionLabel, getTruncatedOptions, pluralize} from '../utils/';
 
-import {DOWN, ESC, RETURN, TAB, UP} from '../constants/keyCode';
+function genId(prefix='') {
+  return prefix + Math.random().toString(36).substr(2, 12);
+}
 
 function getInitialState(props) {
   const {defaultInputValue, defaultSelected, maxResults, multiple} = props;
@@ -32,7 +36,6 @@ function getInitialState(props) {
     activeIndex: -1,
     activeItem: null,
     initialItem: null,
-    isOnlyResult: false,
     selected,
     showMenu: false,
     shownResults: maxResults,
@@ -41,6 +44,12 @@ function getInitialState(props) {
 }
 
 function typeaheadContainer(Typeahead) {
+  // Nested HOCs to encapsulate behaviors. In order from outer to inner.
+  Typeahead = flowRight(
+    highlightOnlyResultContainer,
+    typeaheadInnerContainer,
+  )(Typeahead);
+
   class WrappedTypeahead extends React.Component {
     constructor(props) {
       super(props);
@@ -50,11 +59,16 @@ function typeaheadContainer(Typeahead) {
     getChildContext() {
       return {
         activeIndex: this.state.activeIndex,
-        isOnlyResult: this.state.isOnlyResult,
         onActiveItemChange: this._handleActiveItemChange,
         onInitialItemChange: this._handleInitialItemChange,
         onMenuItemClick: this._handleSelectionAdd,
       };
+    }
+
+    componentWillMount() {
+      // Generate random id here since doing it in defaultProps will generate
+      // the same id for every instance.
+      this._menuId = genId('rbt-menu-');
     }
 
     componentDidMount() {
@@ -104,8 +118,17 @@ function typeaheadContainer(Typeahead) {
     }
 
     render() {
-      const {filterBy, minLength, options} = this.props;
-      const {text} = this.state;
+      const {
+        allowNew,
+        emptyLabel,
+        filterBy,
+        labelKey,
+        minLength,
+        options,
+        paginate,
+      } = this.props;
+
+      const {shownResults, showMenu, text} = this.state;
 
       let results = [];
       if (text.length >= minLength) {
@@ -116,21 +139,43 @@ function typeaheadContainer(Typeahead) {
         results = options.filter(callback);
       }
 
+      // This must come before results are truncated.
+      const shouldPaginate = paginate && results.length > shownResults;
+
+      // Truncate results if necessary.
+      results = getTruncatedOptions(results, shownResults);
+
+      // Add the custom option.
+      if (allowNew) {
+        results = addCustomOption(results, text, labelKey);
+      }
+
+      // This must come after the custom option is added, if applicable.
+      const isMenuShown = !!(
+        text.length >= minLength &&
+        showMenu &&
+        (results.length || emptyLabel)
+      );
+
       return (
         <Typeahead
           {...this.props}
           {...this.state}
+          inputRef={(input) => this._input = input}
+          isMenuShown={isMenuShown}
+          menuId={this.props.menuId || this._menuId}
+          onActiveIndexChange={this._handleActiveIndexChange}
+          onActiveItemChange={this._handleActiveItemChange}
           onClear={this.clear}
           onFocus={this._handleFocus}
+          onHide={this._hideMenu}
           onInitialItemChange={this._handleInitialItemChange}
           onInputChange={this._handleInputChange}
-          onInputFocus={this._handleInputFocus}
-          onKeyDown={this._handleKeyDown}
           onPaginate={this._handlePaginate}
-          onResultsChange={this._handleResultsChange}
           onSelectionAdd={this._handleSelectionAdd}
           onSelectionRemove={this._handleSelectionRemove}
-          ref={(instance) => this._instance = instance}
+          onShow={this._showMenu}
+          paginate={shouldPaginate}
           results={results}
         />
       );
@@ -157,7 +202,11 @@ function typeaheadContainer(Typeahead) {
     }
 
     _getInputNode = () => {
-      return this._instance.getInputNode();
+      return this._input.getInputNode();
+    }
+
+    _handleActiveIndexChange = (activeIndex) => {
+      this.setState({activeIndex});
     }
 
     _handleActiveItemChange = (activeItem) => {
@@ -201,88 +250,11 @@ function typeaheadContainer(Typeahead) {
       this._updateText(text);
     }
 
-    _handleKeyDown = (options, e) => {
-      const {activeItem, showMenu} = this.state;
-
-      switch (e.keyCode) {
-        case UP:
-        case DOWN:
-          // Don't cycle through the options if the menu is hidden.
-          if (!showMenu) {
-            break;
-          }
-
-          let {activeIndex} = this.state;
-
-          // Prevents input cursor from going to the beginning when pressing up.
-          e.preventDefault();
-
-          // Increment or decrement index based on user keystroke.
-          activeIndex += e.keyCode === UP ? -1 : 1;
-
-          // If we've reached the end, go back to the beginning or vice-versa.
-          if (activeIndex === options.length) {
-            activeIndex = -1;
-          } else if (activeIndex === -2) {
-            activeIndex = options.length - 1;
-          }
-
-          const newState = {activeIndex};
-          if (activeIndex === -1) {
-            // Reset the active item if there is no active index.
-            newState.activeItem = null;
-          }
-
-          this.setState(newState);
-          break;
-        case ESC:
-        case TAB:
-          // Prevent closing dialogs.
-          e.keyCode === ESC && e.preventDefault();
-
-          this._hideMenu();
-          break;
-        case RETURN:
-          if (!showMenu) {
-            break;
-          }
-
-          const {initialItem, isOnlyResult} = this.state;
-
-          // if menu is shown and we have active item
-          // there is no any sense to submit form on <RETURN>
-          if (!this.props.submitFormOnEnter || activeItem) {
-            // Prevent submitting forms.
-            e.preventDefault();
-          }
-
-          if (activeItem) {
-            this._handleSelectionAdd(activeItem);
-            break;
-          }
-
-          if (isOnlyResult) {
-            this._handleSelectionAdd(initialItem);
-            break;
-          }
-          break;
-      }
-
-      this.props.onKeyDown(e);
-    }
-
     _handlePaginate = (e) => {
       const {maxResults, onPaginate} = this.props;
 
       onPaginate(e);
       this.setState({shownResults: this.state.shownResults + maxResults});
-    }
-
-    _handleResultsChange = (results) => {
-      const {allowNew, highlightOnlyResult} = this.props;
-      if (!allowNew && highlightOnlyResult) {
-        this.setState({isOnlyResult: results.length === 1});
-      }
     }
 
     _handleSelectionAdd = (selection) => {
@@ -304,8 +276,11 @@ function typeaheadContainer(Typeahead) {
       }
 
       this._hideMenu();
-      this._updateSelected(selected);
+
+      // Text must be updated before the selection to fix #211.
+      // TODO: Find a more robust way of solving the issue.
       this._updateText(text);
+      this._updateSelected(selected);
 
       this.setState({initialItem: selection});
     }
@@ -342,6 +317,10 @@ function typeaheadContainer(Typeahead) {
         showMenu,
         shownResults,
       });
+    }
+
+    _showMenu = () => {
+      this.setState({showMenu: true});
     }
 
     _updateSelected = (selected) => {
@@ -451,6 +430,13 @@ function typeaheadContainer(Typeahead) {
      * large data sets.
      */
     maxResults: PropTypes.number,
+    /**
+     * Id applied to the top-level menu element. Required for accessibility.
+     */
+    menuId: PropTypes.oneOfType([
+      PropTypes.number,
+      PropTypes.string,
+    ]),
     /**
      * Number of input characters that must be entered before showing results.
      */
@@ -573,7 +559,6 @@ function typeaheadContainer(Typeahead) {
 
   WrappedTypeahead.childContextTypes = {
     activeIndex: PropTypes.number.isRequired,
-    isOnlyResult: PropTypes.bool.isRequired,
     onActiveItemChange: PropTypes.func.isRequired,
     onInitialItemChange: PropTypes.func.isRequired,
     onMenuItemClick: PropTypes.func.isRequired,
